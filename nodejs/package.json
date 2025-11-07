@@ -1,16 +1,16 @@
 {
-  "name": "nodejs-sb",
+  "name": "tuic-hysteria-reality",
   "version": "1.0.0",
-  "description": "node",
+  "description": "TUIC + Hysteria2 + Reality 一键部署",
   "main": "index.js",
-  "author": "eooce",
+  "type": "commonjs",
+  "author": "eooce (modified)",
   "license": "MIT",
   "private": false,
   "scripts": {
     "start": "node index.js"
   },
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   }
 }
-  
