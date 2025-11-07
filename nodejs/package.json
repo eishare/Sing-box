@@ -4,7 +4,7 @@
   "description": "TUIC + Hysteria2 + Reality 一键部署",
   "main": "index.js",
   "type": "commonjs",
-  "author": "eooce (modified)",
+  "author": "eishare",
   "license": "MIT",
   "private": false,
   "scripts": {
@@ -14,3 +14,4 @@
     "node": ">=18"
   }
 }
+
