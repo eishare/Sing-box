@@ -1,3 +1,7 @@
-* start.sh代码中UUID更新为自动获取
+* 必须手动输入uuid
 
-* 原UUID代码格式：UUID=${UUID:-'fdeeda45-0a8e-4570-bcc6-d68c995f5830'}
+* tuic、hysteria2、reality根据服务器开放端口情况，自行选择是否添加
+  
+* 由于此类服务器会重启丢失argo临时隧道，直接去除argo协议
+
+* 针对服务器潜在停机问题，设置北京时间每天0点重启服务器
