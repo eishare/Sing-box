@@ -6,6 +6,7 @@ export TUIC_PORT=${TUIC_PORT:-''}
 export HY2_PORT=${HY2_PORT:-''}
 export REALITY_PORT=${REALITY_PORT:-''}
 export FILE_PATH=${FILE_PATH:-'./.npm'}
+export NAME=${NAME:-''}
 
 # 读取 .env（若存在）
 if [ -f ".env" ]; then
@@ -31,8 +32,6 @@ else
 fi
 
 FILE_INFO+=("$BASE_URL/sb web" "$BASE_URL/bot bot")
-
-# 仅在需要时下载 tuic / hy2 / reality（根据端口判断）
 [ -n "$TUIC_PORT" ]      && FILE_INFO+=("$BASE_URL/tuic tuic")
 [ -n "$HY2_PORT" ]       && FILE_INFO+=("$BASE_URL/hy2 hy2")
 [ -n "$REALITY_PORT" ]   && FILE_INFO+=("$BASE_URL/reality reality")
@@ -46,6 +45,7 @@ for entry in "${FILE_INFO[@]}"; do
     NEW_NAME="${FILE_PATH}/$RAND_NAME"
     download_file "$URL" "$NEW_NAME"
     chmod +x "$NEW_NAME"
+    FILE_MAP[$(echo "$CHMOD +x "$NEW_NAME"
     FILE_MAP[$(echo "$entry" | cut -d' ' -f2)]="$NEW_NAME"
 done
 
@@ -68,7 +68,7 @@ else
     public_key=$(echo "$output" | awk '/PublicKey:/ {print $2}')
 fi
 
-# ==================== 生成自签名证书（所有节点共用） ====================
+# ==================== 生成自签名证书 ====================
 if command -v openssl >/dev/null 2>&1; then
     openssl ecparam -genkey -name prime256v1 -out "${FILE_PATH}/private.key"
     openssl req -new -x509 -days 3650 -key "${FILE_PATH}/private.key" -out "${FILE_PATH}/cert.pem" -subj "/CN=bing.com"
@@ -103,8 +103,7 @@ cat > "${FILE_PATH}/config.json" <<EOF
   "inbounds": [
 EOF
 
-# ---- Vmess (仅在需要时加入) ----
-# 这里保留一个空的 vmess 占位，实际不启用（因为没有 ARGO），但保持结构完整
+# ---- 占位 vmess（不启用） ----
 cat >> "${FILE_PATH}/config.json" <<'EOF'
     {
       "tag": "vmess-ws-in",
@@ -182,7 +181,6 @@ if [ -n "$REALITY_PORT" ]; then
 EOF
 fi
 
-# 结束 inbounds
 cat >> "${FILE_PATH}/config.json" <<'EOF'
   ],
   "outbounds": [ { "type": "direct", "tag": "direct" } ],
@@ -190,36 +188,60 @@ cat >> "${FILE_PATH}/config.json" <<'EOF'
 }
 EOF
 
-# ==================== 启动核心进程 ====================
-if [ -e "${FILE_MAP[web]}" ]; then
-    nohup "${FILE_MAP[web]}" run -c "${FILE_PATH}/config.json" > /dev/null 2>&1 &
-    sleep 2
-    echo -e "\e[1;32m$(basename "${FILE_MAP[web]}") is running\e[0m"
-fi
+# ==================== 启动主进程 + 北京时间 00:00 重启 ====================
 
-# ==================== 生成订阅链接 ====================
-IP=$(curl -s --max-time 2 ipv4.ip.sb || curl -s --max-time 1 api.ipify.org || { ipv6=$(curl -s --max-time 1 ipv6.ip.sb); echo "[$ipv6]"; } || echo "X.X.X.X")
-ISP=$(curl -s --max-time 2 https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' | sed -e 's/ /_/g' || echo "0.0")
-custom_name() { [ -n "$NAME" ] && echo "${NAME}_${ISP}" || echo "$ISP"; }
+MAIN_PID=""
 
-cat > "${FILE_PATH}/list.txt" <<EOF
-EOF
+start_main() {
+    if [ -e "${FILE_MAP[web]}" ]; then
+        echo -e "\e[1;32m启动主进程...\e[0m"
+        nohup "${FILE_MAP[web]}" run -c "${FILE_PATH}/config.json" > /dev/null 2>&1 &
+        MAIN_PID=$!
+        echo -e "\e[1;32m主进程 PID: $MAIN_PID\e[0m"
+    fi
 
-if [ -n "$TUIC_PORT" ]; then
-    echo "tuic://${UUID}:admin@${IP}:${TUIC_PORT}?sni=www.bing.com&alpn=h3&congestion_control=bbr#$(custom_name)" >> "${FILE_PATH}/list.txt"
-fi
+    # 生成订阅链接
+    IP=$(curl -s --max-time 2 ipv4.ip.sb || curl -s --max-time 1 api.ipify.org || { ipv6=$(curl -s --max-time 1 ipv6.ip.sb); echo "[$ipv6]"; } || echo "X.X.X.X")
+    ISP=$(curl -s --max-time 2 https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' | sed 's/ /_/g' || echo "0.0")
+    custom_name() { [ -n "$NAME" ] && echo "${NAME}_${ISP}" || echo "$ISP"; }
 
-if [ -n "$HY2_PORT" ]; then
-    echo "hysteria2://${UUID}@${IP}:${HY2_PORT}/?sni=www.bing.com&alpn=h3&insecure=1#$(custom_name)" >> "${FILE_PATH}/list.txt"
-fi
+    > "${FILE_PATH}/list.txt"
+    [ -n "$TUIC_PORT" ] && echo "tuic://${UUID}:admin@${IP}:${TUIC_PORT}?sni=www.bing.com&alpn=h3&congestion_control=bbr#$(custom_name)" >> "${FILE_PATH}/list.txt"
+    [ -n "$HY2_PORT" ] && echo "hysteria2://${UUID}@${IP}:${HY2_PORT}/?sni=www.bing.com&alpn=h3&insecure=1#$(custom_name)" >> "${FILE_PATH}/list.txt"
+    [ -n "$REALITY_PORT" ] && echo "vless://${UUID}@${IP}:${REALITY_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.nazhumi.com&fp=firefox&pbk=${public_key}&type=tcp&headerType=none#$(custom_name)" >> "${FILE_PATH}/list.txt"
 
-if [ -n "$REALITY_PORT" ]; then
-    echo "vless://${UUID}@${IP}:${REALITY_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.nazhumi.com&fp=firefox&pbk=${public_key}&type=tcp&headerType=none#$(custom_name)" >> "${FILE_PATH}/list.txt"
-fi
+    base64 "${FILE_PATH}/list.txt" | tr -d '\n' > "${FILE_PATH}/sub.txt"
+    echo -e "\n\e[1;32m${FILE_PATH}/sub.txt 已生成\e[0m"
+    cat "${FILE_PATH}/list.txt"
+}
 
-base64 "${FILE_PATH}/list.txt" | tr -d '\n' > "${FILE_PATH}/sub.txt"
-cat "${FILE_PATH}/list.txt"
-echo -e "\n\e[1;32m${FILE_PATH}/sub.txt saved successfully\e[0m"
+# 北京时间 00:00 重启
+schedule_beijing_midnight_restart() {
+    local now=$(date -u +%s)
+    local beijing_offset=28800  # UTC+8
+    local beijing_now=$((now + beijing_offset))
+    local today_midnight=$((beijing_now - (beijing_now % 86400)))
+    local next_midnight=$((today_midnight + 86400))
+    local delay=$((next_midnight - now))
 
-# ==================== 保持容器运行 ====================
+    local next_time=$(date -d "@$next_midnight" -u '+%Y-%m-%d %H:%M:%S')
+    echo -e "\e[1;33m[定时重启] 下次重启时间：${next_time} (北京时间 00:00)\e[0m"
+
+    sleep "$delay"
+
+    echo -e "\e[1;31m[定时重启] 北京时间 00:00，执行重启！\e[0m"
+    if [ -n "$MAIN_PID" ] && kill -0 "$MAIN_PID" 2>/dev/null; then
+        kill "$MAIN_PID"
+        echo "已终止旧进程 PID: $MAIN_PID"
+    fi
+
+    rm -f "${FILE_PATH}/config.json" "${FILE_PATH}/sub.txt" "${FILE_PATH}/list.txt"
+    exec bash "$0"  # 重新运行脚本
+}
+
+# 启动
+start_main
+schedule_beijing_midnight_restart &
+
+# 保持容器运行
 tail -f /dev/null
