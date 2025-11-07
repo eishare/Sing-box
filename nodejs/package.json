@@ -1,7 +1,7 @@
 {
-  "name": "tuic-reality-deploy",
+  "name": "tuic-hysteria-reality",
   "version": "1.0.0",
-  "description": "TUIC + Reality 部署脚本（Node.js 版）",
+  "description": "TUIC + Hysteria2 + Reality · 手动输入 · 北京重启",
   "main": "node.js",
   "type": "module",
   "scripts": {
