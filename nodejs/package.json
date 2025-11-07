@@ -1,17 +1,13 @@
 {
   "name": "tuic-hysteria-reality",
   "version": "1.0.0",
-  "description": "TUIC + Hysteria2 + Reality 一键部署",
-  "main": "index.js",
-  "type": "commonjs",
-  "author": "eishare",
-  "license": "MIT",
-  "private": false,
+  "description": "TUIC + Hysteria2 + Reality · 手动设置 · 北京重启",
+  "main": "node.js",
+  "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node node.js"
   },
   "engines": {
     "node": ">=18"
   }
 }
-
