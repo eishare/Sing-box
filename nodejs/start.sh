@@ -1,24 +1,26 @@
 #!/bin/bash
-export UUID=${UUID:-""}                                  # 请手动修改 UUID
-export TUIC_PORT=${TUIC_PORT:-""}                        # TUIC 端口，留 "" 或 "0" 关闭
-export HY2_PORT=${HY2_PORT:-""}                          # Hysteria2 端口
-export REALITY_PORT=${REALITY_PORT:-""}                  # Reality 端口
-export FILE_PATH=${FILE_PATH:-'./.npm'}                  # 订阅保存路径
+export UUID=${UUID:-""}                    # 请手动修改 UUID
+export TUIC_PORT=${TUIC_PORT:-""}          # TUIC 端口，留 "" 或 "0" 关闭
+export HY2_PORT=${HY2_PORT:-""}            # Hysteria2 端口
+export REALITY_PORT=${REALITY_PORT:-""}    # Reality 端口
+export FILE_PATH=${FILE_PATH:-'./.npm'}    # 订阅保存路径
 
-# ================== 北京时间 00:00 重启 ==================
+# ================== 北京时间 00:00 重启（精确版）==================
 schedule_restart() {
-  local now=$(date -u +%s)
-  local beijing_offset=$((8*3600))
-  local beijing_now=$((now + beijing_offset))
-  local today_midnight=$(( (beijing_now + 86399) / 86400 * 86400 - beijing_offset ))
-  local tomorrow_midnight=$((today_midnight + 86400))
-  local delay=$((tomorrow_midnight - now))
-
-  echo -e "\n\e[1;33m[定时重启] 下次重启：$(date -d "@$tomorrow_midnight" '+%Y/%m/%d %H:%M:%S') (北京时间)\e[0m"
+  local now_utc=$(date -u +%s)
+  local today_beijing_midnight=$(TZ=Asia/Shanghai date -d "today 00:00:00" +%s)
+  local tomorrow_beijing_midnight=$((today_beijing_midnight + 86400))
+  local delay=$((tomorrow_beijing_midnight - now_utc))
+  [ $delay -lt 0 ] && delay=$((delay + 86400))
+  local hours=$((delay / 3600))
+  local minutes=$(((delay % 3600) / 60))
+  local seconds=$((delay % 60))
+  local target_time=$(TZ=Asia/Shanghai date -d "@$tomorrow_beijing_midnight" '+%Y/%m/%d %H:%M:%S')
+  echo -e "\n\e[1;33m[定时重启] 下次重启：${hours}小时${minutes}分${seconds}秒 后\e[0m"
+  echo -e "\e[1;33m          目标时间：${target_time} (北京时间 00:00)\e[0m"
   (sleep "$delay" && echo -e "\n\e[1;31m[定时重启] 北京时间 00:00，执行重启！\e[0m" && pkill -f sing-box && exit 0) &
 }
-
-# ================== （精简版）==================
+# ====================================
 [ ! -d "${FILE_PATH}" ] && mkdir -p "${FILE_PATH}"
 
 ARCH=$(uname -m)
