@@ -1,11 +1,11 @@
 {
-  "name": "tuic-hysteria-reality",
+  "name": "tuic-hy2-reality",
   "version": "1.0.0",
-  "description": "TUIC + Hysteria2 + Reality · 手动输入 · 北京重启",
-  "main": "node.js",
-  "type": "module",
+  "description": "TUIC + Hysteria2 + Reality·北京时间零点重启",
+  "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "node node.js"
+    "start": "node index.js"
   },
   "engines": {
     "node": ">=18"
