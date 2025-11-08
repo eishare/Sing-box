@@ -1,3 +1,5 @@
+* 警告：不适用低配置服务器，例如freecloudpanel-64M内存+128M存储
+* 
 * 必须手动输入uuid
 
 * tuic、hysteria2、reality根据服务器开放端口情况，自行选择是否添加
