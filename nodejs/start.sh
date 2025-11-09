@@ -1,28 +1,18 @@
 #!/bin/bash
-export UUID=${UUID:-""}                    # 请手动修改 UUID
-export TUIC_PORT=${TUIC_PORT:-""}          # TUIC 端口，留 "" 或 "0" 关闭
-export HY2_PORT=${HY2_PORT:-""}            # Hysteria2 端口
-export REALITY_PORT=${REALITY_PORT:-""}    # Reality 端口
-export FILE_PATH=${FILE_PATH:-'./.npm'}    # 订阅保存路径
+set -e
 
-# ================== 北京时间 00:00 重启（精确版）==================
-schedule_restart() {
-  local now_utc=$(date -u +%s)
-  local today_beijing_midnight=$(TZ=Asia/Shanghai date -d "today 00:00:00" +%s)
-  local tomorrow_beijing_midnight=$((today_beijing_midnight + 86400))
-  local delay=$((tomorrow_beijing_midnight - now_utc))
-  [ $delay -lt 0 ] && delay=$((delay + 86400))
-  local hours=$((delay / 3600))
-  local minutes=$(((delay % 3600) / 60))
-  local seconds=$((delay % 60))
-  local target_time=$(TZ=Asia/Shanghai date -d "@$tomorrow_beijing_midnight" '+%Y/%m/%d %H:%M:%S')
-  echo -e "\n\e[1;33m[定时重启] 下次重启：${hours}小时${minutes}分${seconds}秒 后\e[0m"
-  echo -e "\e[1;33m          目标时间：${target_time} (北京时间 00:00)\e[0m"
-  (sleep "$delay" && echo -e "\n\e[1;31m[定时重启] 北京时间 00:00，执行重启！\e[0m" && pkill -f sing-box && exit 0) &
-}
-# ====================================
+# ================== 环境变量 ==================
+export UUID=${UUID:-""}  # 
+export TUIC_PORT=${TUIC_PORT:-""}
+export HY2_PORT=${HY2_PORT:-""}
+export REALITY_PORT=${REALITY_PORT:-""}
+export FILE_PATH=${FILE_PATH:-'./.npm'}
+export CRON_FILE="/tmp/crontab_singbox"
+
+# ================== 创建目录 ==================
 [ ! -d "${FILE_PATH}" ] && mkdir -p "${FILE_PATH}"
 
+# ================== 架构检测 & 下载 sing-box ==================
 ARCH=$(uname -m)
 BASE_URL=""
 if [[ "$ARCH" == "arm"* ]] || [[ "$ARCH" == "aarch64" ]]; then
@@ -37,6 +27,7 @@ else
 fi
 
 FILE_INFOS=("sb sing-box")
+declare -A FILE_MAP
 
 download_file() {
   local URL=$1
@@ -60,18 +51,23 @@ for entry in "${FILE_INFOS[@]}"; do
   FILE_MAP[$NAME]="$NEW_NAME"
 done
 
-# 生成 Reality 密钥
-if [ -f "${FILE_PATH}/key.txt" ]; then
-  private_key=$(grep "PrivateKey:" "${FILE_PATH}/key.txt" | awk '{print $2}')
-  public_key=$(grep "PublicKey:" "${FILE_PATH}/key.txt" | awk '{print $2}')
+# ================== 固定 Reality 密钥 ==================
+KEY_FILE="${FILE_PATH}/key.txt"
+if [ -f "$KEY_FILE" ]; then
+  echo -e "\e[1;33m[密钥] 检测到已有密钥，复用...\e[0m"
+  private_key=$(grep "PrivateKey:" "$KEY_FILE" | awk '{print $2}')
+  public_key=$(grep "PublicKey:" "$KEY_FILE" | awk '{print $2}')
 else
+  echo -e "\e[1;33m[密钥] 首次生成 Reality 密钥对...\e[0m"
   output=$("${FILE_MAP[sing-box]}" generate reality-keypair)
-  echo "$output" > "${FILE_PATH}/key.txt"
+  echo "$output" > "$KEY_FILE"
   private_key=$(echo "$output" | awk '/PrivateKey:/ {print $2}')
   public_key=$(echo "$output" | awk '/PublicKey:/ {print $2}')
+  chmod 600 "$KEY_FILE"
+  echo -e "\e[1;32m[密钥] 密钥已保存，重启后保持不变\e[0m"
 fi
 
-# 生成证书
+# ================== 生成证书（自签或固定）==================
 if ! command -v openssl >/dev/null 2>&1; then
   cat > "${FILE_PATH}/private.key" <<'EOF'
 -----BEGIN EC PARAMETERS-----
@@ -101,7 +97,7 @@ else
 fi
 chmod 600 "${FILE_PATH}/private.key"
 
-# 生成 config.json（支持端口复用）
+# ================== 生成 config.json ==================
 cat > "${FILE_PATH}/config.json" <<EOF
 {
   "log": { "disabled": true },
@@ -143,16 +139,16 @@ cat > "${FILE_PATH}/config.json" <<EOF
 }
 EOF
 
-# 启动 sing-box
+# ================== 启动 sing-box ==================
 nohup "${FILE_MAP[sing-box]}" run -c "${FILE_PATH}/config.json" > /dev/null 2>&1 &
 sleep 2
 echo -e "\e[1;32msing-box 已启动\e[0m"
 
-# 获取 IP
+# ================== 获取 IP & ISP ==================
 IP=$(curl -s --max-time 2 ipv4.ip.sb || curl -s --max-time 1 api.ipify.org || echo "IP_ERROR")
 ISP=$(curl -s --max-time 2 https://speed.cloudflare.com/meta | awk -F'"' '{print $26"-"$18}' || echo "0.0")
 
-# 生成订阅
+# ================== 生成订阅 ==================
 > "${FILE_PATH}/list.txt"
 [ "$TUIC_PORT" != "" ] && [ "$TUIC_PORT" != "0" ] && echo "tuic://${UUID}:admin@${IP}:${TUIC_PORT}?sni=www.bing.com&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC-${ISP}" >> "${FILE_PATH}/list.txt"
 [ "$HY2_PORT" != "" ] && [ "$HY2_PORT" != "0" ] && echo "hysteria2://${UUID}@${IP}:${HY2_PORT}/?sni=www.bing.com&insecure=1#Hysteria2-${ISP}" >> "${FILE_PATH}/list.txt"
@@ -162,8 +158,30 @@ base64 "${FILE_PATH}/list.txt" | tr -d '\n' > "${FILE_PATH}/sub.txt"
 cat "${FILE_PATH}/list.txt"
 echo -e "\n\e[1;32m${FILE_PATH}/sub.txt 已保存\e[0m"
 
-# 启动定时重启
-schedule_restart
+# ================== 非 root 定时重启（cron）==================
+setup_cron_restart() {
+  local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local restart_script="${script_dir}/restart_singbox.sh"
 
-# 保持运行
+  # 创建重启脚本
+  cat > "$restart_script" <<'EOS'
+#!/bin/bash
+pkill -f "sing-box run" || true
+sleep 2
+nohup /bin/bash -c "cd '$(pwd)' && $(which bash) start.sh" > /dev/null 2>&1 &
+EOS
+  chmod +x "$restart_script"
+
+  # 安装 cron（当前用户）
+  crontab -l 2>/dev/null | grep -v "$restart_script" > "$CRON_FILE" || true
+  echo "0 0 * * * $restart_script" >> "$CRON_FILE"
+  crontab "$CRON_FILE" && rm -f "$CRON_FILE"
+
+  echo -e "\e[1;33m[定时重启] 已设置每天 00:00（北京时间）自动重启\e[0m"
+}
+
+setup_cron_restart
+
+# ================== 保持前台运行 ==================
+echo -e "\e[1;34m[提示] 按 Ctrl+C 退出，节点将继续后台运行\e[0m"
 tail -f /dev/null
