@@ -8,6 +8,7 @@ export HY2_PORT=${HY2_PORT:-""}
 export REALITY_PORT=${REALITY_PORT:-""}
 export FILE_PATH=${FILE_PATH:-'./.npm'}
 export CRON_FILE="/tmp/crontab_singbox"
+mkdir -p /home/singbox_data
 
 # ================== 创建目录 ==================
 [ ! -d "${FILE_PATH}" ] && mkdir -p "${FILE_PATH}"
@@ -158,29 +159,26 @@ base64 "${FILE_PATH}/list.txt" | tr -d '\n' > "${FILE_PATH}/sub.txt"
 cat "${FILE_PATH}/list.txt"
 echo -e "\n\e[1;32m${FILE_PATH}/sub.txt 已保存\e[0m"
 
-# ================== 非 root 定时重启（cron）==================
-setup_cron_restart() {
-  local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  local restart_script="${script_dir}/restart_singbox.sh"
+# ================== 无 root 定时自重启（北京时间） ==================
+schedule_restart() {
+  while true; do
+    now_hour=$(TZ='Asia/Shanghai' date +%H)
+    now_min=$(TZ='Asia/Shanghai' date +%M)
 
-  # 创建重启脚本
-  cat > "$restart_script" <<'EOS'
-#!/bin/bash
-pkill -f "sing-box run" || true
-sleep 2
-nohup /bin/bash -c "cd '$(pwd)' && $(which bash) start.sh" > /dev/null 2>&1 &
-EOS
-  chmod +x "$restart_script"
+    if [ "$now_hour" -eq 0 ] && [ "$now_min" -eq 0 ]; then
+      echo "[定时重启] 到达北京时间 00:00，执行重启..."
+      pkill -f "sing-box run" || true
+      sleep 2
+      nohup bash start.sh > /dev/null 2>&1 &
+      exit 0
+    fi
 
-  # 安装 cron（当前用户）
-  crontab -l 2>/dev/null | grep -v "$restart_script" > "$CRON_FILE" || true
-  echo "0 0 * * * $restart_script" >> "$CRON_FILE"
-  crontab "$CRON_FILE" && rm -f "$CRON_FILE"
-
-  echo -e "\e[1;33m[定时重启] 已设置每天 00:00（北京时间）自动重启\e[0m"
+    sleep 60
+  done
 }
 
-setup_cron_restart
+# 后台执行定时器
+schedule_restart &
 
 # ================== 保持前台运行 ==================
 echo -e "\e[1;34m[提示] 按 Ctrl+C 退出，节点将继续后台运行\e[0m"
