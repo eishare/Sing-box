@@ -160,17 +160,23 @@ base64 "${FILE_PATH}/list.txt" | tr -d '\n' > "${FILE_PATH}/sub.txt"
 cat "${FILE_PATH}/list.txt"
 echo -e "\n\e[1;32m${FILE_PATH}/sub.txt 已保存\e[0m"
 
-# ================== 无 root 定时自重启（北京时间） ==================
+# ================== 无 root 定时自重启（每日北京时间 00:00） ==================
 schedule_restart() {
+  echo "[定时重启] 已启动定时检测（北京时间 00:00 自动重启）"
   while true; do
-    now_hour=$(TZ='Asia/Shanghai' date +%H)
-    now_min=$(TZ='Asia/Shanghai' date +%M)
+    # 强制使用北京时间（UTC+8）
+    now_hour=$(date -u +"%H")
+    now_min=$(date -u +"%M")
 
-    if [ "$now_hour" -eq 0 ] && [ "$now_min" -eq 0 ]; then
-      echo "[定时重启] 到达北京时间 00:00，执行重启..."
+    # 把 UTC 时间换算为北京时间（+8小时）
+    beijing_hour=$(( (10#$now_hour + 8) % 24 ))
+
+    if [ "$beijing_hour" -eq 0 ] && [ "$now_min" -eq 0 ]; then
+      echo "[定时重启] 到达北京时间 00:00，执行自重启..."
       pkill -f "sing-box run" || true
       sleep 2
       nohup bash start.sh > /dev/null 2>&1 &
+      echo "[定时重启] ✅ 已触发重启任务，当前进程退出..."
       exit 0
     fi
 
@@ -178,7 +184,7 @@ schedule_restart() {
   done
 }
 
-# 后台执行定时器
+# 启动定时重启任务（后台持续运行）
 schedule_restart &
 
 # ================== 保持前台运行 ==================
