@@ -8,7 +8,8 @@ export HY2_PORT=${HY2_PORT:-""}
 export REALITY_PORT=${REALITY_PORT:-""}
 export FILE_PATH=${FILE_PATH:-'./.npm'}
 export CRON_FILE="/tmp/crontab_singbox"
-mkdir -p /home/singbox_data
+DATA_PATH="$(pwd)/singbox_data"
+mkdir -p "$DATA_PATH"
 
 # ================== 创建目录 ==================
 [ ! -d "${FILE_PATH}" ] && mkdir -p "${FILE_PATH}"
