@@ -173,7 +173,12 @@ schedule_restart() {
 
     if [ "$beijing_hour" -eq 0 ] && [ "$now_min" -eq 0 ]; then
       echo "[定时重启] 到达北京时间 00:00，执行自重启..."
-      pkill -f "sing-box run" || true
+
+      # 用 ps + grep + awk 方式终止 sing-box 进程（兼容无 pkill 环境）
+      ps -ef | grep "sing-box run" | grep -v grep | awk '{print $2}' | while read pid; do
+        kill "$pid" 2>/dev/null || true
+      done
+
       sleep 2
       nohup bash start.sh > /dev/null 2>&1 &
       echo "[定时重启] ✅ 已触发重启任务，当前进程退出..."
