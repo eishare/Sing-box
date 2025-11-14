@@ -1,25 +1,29 @@
-#!/bin/bash
+##!/bin/bash
 set -e
 
-# ================== 环境变量 ==================
+# ================== 端口设置 ==================
 export TUIC_PORT=${TUIC_PORT:-""}
 export HY2_PORT=${HY2_PORT:-""}
 export REALITY_PORT=${REALITY_PORT:-""}
-export FILE_PATH=${FILE_PATH:-'./.npm'}
-export CRON_FILE="/tmp/crontab_singbox"
-DATA_PATH="$(pwd)/singbox_data"
-mkdir -p "$DATA_PATH"
 
-# ================== UUID 固定保存 ==================
+# ================== 强制切换到脚本所在目录 ==================
+cd "$(dirname "$0")"
+
+# ================== 环境变量 & 绝对路径 ==================
+export FILE_PATH="${PWD}/.npm"
+export DATA_PATH="${PWD}/singbox_data"
+mkdir -p "$FILE_PATH" "$DATA_PATH"
+
+# ================== UUID 固定保存（核心逻辑）==================
 UUID_FILE="${FILE_PATH}/uuid.txt"
 if [ -f "$UUID_FILE" ]; then
   UUID=$(cat "$UUID_FILE")
-  echo "[UUID] 已读取固定 UUID: $UUID"
+  echo -e "\e[1;33m[UUID] 复用固定 UUID: $UUID\e[0m"
 else
   UUID=$(cat /proc/sys/kernel/random/uuid)
   echo "$UUID" > "$UUID_FILE"
   chmod 600 "$UUID_FILE"
-  echo "[UUID] 首次生成 UUID: $UUID"
+  echo -e "\e[1;32m[UUID] 首次生成并永久保存: $UUID\e[0m"
 fi
 
 # ================== 创建目录 ==================
