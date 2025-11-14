@@ -10,6 +10,9 @@ export CRON_FILE="/tmp/crontab_singbox"
 DATA_PATH="$(pwd)/singbox_data"
 mkdir -p "$DATA_PATH"
 
+mkdir -p "${FILE_PATH}"
+
+# ================== UUID 固定保存 ==================
 UUID_FILE="${FILE_PATH}/uuid.txt"
 
 if [ -f "$UUID_FILE" ]; then
@@ -22,12 +25,8 @@ else
   echo "[UUID] 首次生成 UUID: $UUID"
 fi
 
-# ================== 创建目录 ==================
-[ ! -d "${FILE_PATH}" ] && mkdir -p "${FILE_PATH}"
-
 # ================== 架构检测 & 下载 sing-box ==================
 ARCH=$(uname -m)
-BASE_URL=""
 if [[ "$ARCH" == "arm"* ]] || [[ "$ARCH" == "aarch64" ]]; then
   BASE_URL="https://arm64.ssss.nyc.mn"
 elif [[ "$ARCH" == "amd64"* ]] || [[ "$ARCH" == "x86_64" ]]; then
@@ -105,6 +104,7 @@ else
   openssl ecparam -genkey -name prime256v1 -out "${FILE_PATH}/private.key" 2>/dev/null
   openssl req -new -x509 -days 3650 -key "${FILE_PATH}/private.key" -out "${FILE_PATH}/cert.pem" -subj "/CN=bing.com" 2>/dev/null
 fi
+
 chmod 600 "${FILE_PATH}/private.key"
 
 # ================== 生成 config.json ==================
@@ -149,9 +149,54 @@ cat > "${FILE_PATH}/config.json" <<EOF
 }
 EOF
 
-# ================== 启动 sing-box（封装函数） ==================
+# ================== 启动 sing-box（函数） ==================
 start_singbox() {
   "${FILE_MAP[sing-box]}" run -c "${FILE_PATH}/config.json" > /dev/null 2>&1 &
   SINGBOX_PID=$!
   sleep 2
   echo "[SING-BOX] 启动完成 PID=$SINGBOX_PID"
+}
+
+start_singbox
+
+# ================== 监控 sing-box（掉线自动重启） ==================
+monitor_singbox() {
+  while true; do
+    wait "$SINGBOX_PID" 2>/dev/null || true
+    echo "[监控] 检测到 sing-box 退出 → 3 秒后重启..."
+    sleep 3
+    start_singbox
+  done
+}
+monitor_singbox &
+
+# ================== 每日北京时间 0 点重启 ==================
+schedule_restart() {
+  echo "[定时重启] 已启动（北京时间 00:00 自动重启）"
+  LAST_RESTART_DAY=-1
+
+  while true; do
+    now_ts=$(date +%s)
+    beijing_ts=$((now_ts + 28800))
+    beijing_hour=$(( (beijing_ts / 3600) % 24 ))
+    beijing_min=$(( (beijing_ts / 60) % 60 ))
+    beijing_day=$(( beijing_ts / 86400 ))
+
+    if [ "$beijing_hour" -eq 0 ] &&
+       [ "$beijing_min" -eq 0 ] &&
+       [ "$beijing_day" -ne "$LAST_RESTART_DAY" ]; then
+
+      echo "[定时重启] ✓ 到达北京时间 00:00 → 重启 sing-box..."
+      kill "$SINGBOX_PID" 2>/dev/null || true
+      LAST_RESTART_DAY=$beijing_day
+      sleep 70
+    fi
+
+    sleep 20
+  done
+}
+schedule_restart &
+
+# ================== 防止容器退出 ==================
+echo "[系统] sing-box 已启动，保持运行中..."
+while true; do sleep 3600; done
