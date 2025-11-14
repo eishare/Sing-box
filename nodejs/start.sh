@@ -175,10 +175,15 @@ base64 "${FILE_PATH}/list.txt" | tr -d '\n' > "${FILE_PATH}/sub.txt"
 cat "${FILE_PATH}/list.txt"
 echo -e "\n\e[1;32m${FILE_PATH}/sub.txt 已保存\e[0m"
 
-# ================== 每日北京时间 00:03 重启 ==================
+# ================== 每日北京时间 00:03 重启Sing-box ==================
 schedule_restart() {
-  echo "[定时重启] 已启动（北京时间 00:03）"
-  LAST_RESTART_DAY=-1
+  echo -e "\e[1;34m[定时重启Sing-box] 已启动（北京时间 00:03）\e[0m"
+
+  # 初始化为今天，防止启动时误触发
+  now_ts=$(date +%s)
+  beijing_ts=$((now_ts + 28800))
+  LAST_RESTART_DAY=$(( beijing_ts / 86400 ))
+
   while true; do
     now_ts=$(date +%s)
     beijing_ts=$((now_ts + 28800))
@@ -186,13 +191,22 @@ schedule_restart() {
     M=$(( (beijing_ts / 60) % 60 ))
     D=$(( beijing_ts / 86400 ))
 
-    if [ "$H" -eq 0 ] && [ "$M" -eq 3 ] && [ "$D" -ne "$LAST_RESTART_DAY" ]; then
-      echo "[定时重启] 到达 00:03 → 重启 sing-box"
+    if [ "$H" -eq 0 ] && [ "$M" -eq 03 ] && [ "$D" -ne "$LAST_RESTART_DAY" ]; then
+      echo -e "\e[1;33m[定时重启Sing-box] 到达 00:03 → 重启 sing-box\e[0m"
       LAST_RESTART_DAY=$D
+      
+      # 杀死旧进程
       kill "$SINGBOX_PID" 2>/dev/null || true
+      
+      # 等待优雅退出
       sleep 70
+      
+      # 启动新进程
+      nohup "$SINGBOX_BIN" run -c "${FILE_PATH}/config.json" > "${DATA_PATH}/singbox.log" 2>&1 &
+      SINGBOX_PID=$!  # 关键：更新 PID！
+      
+      echo -e "\e[1;32m[重启完成] 新 sing-box 进程 PID: $SINGBOX_PID\e[0m"
     fi
-
     sleep 20
   done
 }
