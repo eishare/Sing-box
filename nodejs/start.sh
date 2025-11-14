@@ -142,9 +142,10 @@ cat > "${FILE_PATH}/config.json" <<EOF
 EOF
 
 # ================== 启动 sing-box ==================
-nohup "${FILE_MAP[sing-box]}" run -c "${FILE_PATH}/config.json" > /dev/null 2>&1 &
+"${FILE_MAP[sing-box]}" run -c "${FILE_PATH}/config.json" > /dev/null 2>&1 &
+SINGBOX_PID=$!
 sleep 2
-echo -e "\e[1;32msing-box 已启动\e[0m"
+echo -e "\e[1;32m[SING-BOX] 已启动，PID = ${SINGBOX_PID}\e[0m"
 
 # ================== 获取 IP & ISP ==================
 IP=$(curl -s --max-time 2 ipv4.ip.sb || curl -s --max-time 1 api.ipify.org || echo "IP_ERROR")
