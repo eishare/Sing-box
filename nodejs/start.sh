@@ -2,7 +2,6 @@
 set -e
 
 # ================== 环境变量 ==================
-export UUID=${UUID:-""}  # 
 export TUIC_PORT=${TUIC_PORT:-""}
 export HY2_PORT=${HY2_PORT:-""}
 export REALITY_PORT=${REALITY_PORT:-""}
@@ -10,6 +9,18 @@ export FILE_PATH=${FILE_PATH:-'./.npm'}
 export CRON_FILE="/tmp/crontab_singbox"
 DATA_PATH="$(pwd)/singbox_data"
 mkdir -p "$DATA_PATH"
+
+UUID_FILE="${FILE_PATH}/uuid.txt"
+
+if [ -f "$UUID_FILE" ]; then
+  UUID=$(cat "$UUID_FILE")
+  echo "[UUID] 已读取固定 UUID: $UUID"
+else
+  UUID=$(cat /proc/sys/kernel/random/uuid)
+  echo "$UUID" > "$UUID_FILE"
+  chmod 600 "$UUID_FILE"
+  echo "[UUID] 首次生成 UUID: $UUID"
+fi
 
 # ================== 创建目录 ==================
 [ ! -d "${FILE_PATH}" ] && mkdir -p "${FILE_PATH}"
@@ -35,11 +46,11 @@ download_file() {
   local URL=$1
   local FILENAME=$2
   if command -v curl >/dev/null 2>&1; then
-    curl -L -sS -o "$FILENAME" "$URL" && echo -e "\e[1;32m下载 $FILENAME (curl)\e[0m"
+    curl -L -sS -o "$FILENAME" "$URL"
   elif command -v wget >/dev/null 2>&1; then
-    wget -q -O "$FILENAME" "$URL" && echo -e "\e[1;32m下载 $FILENAME (wget)\e[0m"
+    wget -q -O "$FILENAME" "$URL"
   else
-    echo -e "\e[1;31m未找到 curl 或 wget\e[0m"
+    echo "未找到 curl 或 wget"
     exit 1
   fi
 }
@@ -56,20 +67,17 @@ done
 # ================== 固定 Reality 密钥 ==================
 KEY_FILE="${FILE_PATH}/key.txt"
 if [ -f "$KEY_FILE" ]; then
-  echo -e "\e[1;33m[密钥] 检测到已有密钥，复用...\e[0m"
   private_key=$(grep "PrivateKey:" "$KEY_FILE" | awk '{print $2}')
-  public_key=$(grep "PublicKey:" "$KEY_FILE" | awk '{print $2}')
+  public_key=$(grep "PublicKey:"  "$KEY_FILE" | awk '{print $2}')
 else
-  echo -e "\e[1;33m[密钥] 首次生成 Reality 密钥对...\e[0m"
   output=$("${FILE_MAP[sing-box]}" generate reality-keypair)
   echo "$output" > "$KEY_FILE"
   private_key=$(echo "$output" | awk '/PrivateKey:/ {print $2}')
-  public_key=$(echo "$output" | awk '/PublicKey:/ {print $2}')
+  public_key=$(echo "$output" | awk '/PublicKey:/  {print $2}')
   chmod 600 "$KEY_FILE"
-  echo -e "\e[1;32m[密钥] 密钥已保存，重启后保持不变\e[0m"
 fi
 
-# ================== 生成证书（自签或固定）==================
+# ================== 生成证书 ==================
 if ! command -v openssl >/dev/null 2>&1; then
   cat > "${FILE_PATH}/private.key" <<'EOF'
 -----BEGIN EC PARAMETERS-----
@@ -141,58 +149,9 @@ cat > "${FILE_PATH}/config.json" <<EOF
 }
 EOF
 
-# ================== 启动 sing-box ==================
-"${FILE_MAP[sing-box]}" run -c "${FILE_PATH}/config.json" > /dev/null 2>&1 &
-SINGBOX_PID=$!
-sleep 2
-echo -e "\e[1;32m[SING-BOX] 已启动，PID = ${SINGBOX_PID}\e[0m"
-
-# ================== 获取 IP & ISP ==================
-IP=$(curl -s --max-time 2 ipv4.ip.sb || curl -s --max-time 1 api.ipify.org || echo "IP_ERROR")
-ISP=$(curl -s --max-time 2 https://speed.cloudflare.com/meta | awk -F'"' '{print $26"-"$18}' || echo "0.0")
-
-# ================== 生成订阅 ==================
-> "${FILE_PATH}/list.txt"
-[ "$TUIC_PORT" != "" ] && [ "$TUIC_PORT" != "0" ] && echo "tuic://${UUID}:admin@${IP}:${TUIC_PORT}?sni=www.bing.com&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC-${ISP}" >> "${FILE_PATH}/list.txt"
-[ "$HY2_PORT" != "" ] && [ "$HY2_PORT" != "0" ] && echo "hysteria2://${UUID}@${IP}:${HY2_PORT}/?sni=www.bing.com&insecure=1#Hysteria2-${ISP}" >> "${FILE_PATH}/list.txt"
-[ "$REALITY_PORT" != "" ] && [ "$REALITY_PORT" != "0" ] && echo "vless://${UUID}@${IP}:${REALITY_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.nazhumi.com&fp=firefox&pbk=${public_key}&type=tcp#Reality-${ISP}" >> "${FILE_PATH}/list.txt"
-
-base64 "${FILE_PATH}/list.txt" | tr -d '\n' > "${FILE_PATH}/sub.txt"
-cat "${FILE_PATH}/list.txt"
-echo -e "\n\e[1;32m${FILE_PATH}/sub.txt 已保存\e[0m"
-
-# ================== 无 root 定时自重启（每日北京时间 00:00） ==================
-schedule_restart() {
-  echo "[定时重启] 已启动定时检测（北京时间 00:00 自动重启）"
-  while true; do
-    # 强制使用北京时间（UTC+8）
-    now_hour=$(date -u +"%H")
-    now_min=$(date -u +"%M")
-
-    # 把 UTC 时间换算为北京时间（+8小时）
-    beijing_hour=$(( (10#$now_hour + 8) % 24 ))
-
-    if [ "$beijing_hour" -eq 0 ] && [ "$now_min" -eq 0 ]; then
-      echo "[定时重启] 到达北京时间 00:00，执行自重启..."
-
-      # 用 ps + grep + awk 方式终止 sing-box 进程（兼容无 pkill 环境）
-      ps -ef | grep "sing-box run" | grep -v grep | awk '{print $2}' | while read pid; do
-        kill "$pid" 2>/dev/null || true
-      done
-
-      sleep 2
-      nohup bash start.sh > /dev/null 2>&1 &
-      echo "[定时重启] ✅ 已触发重启任务，当前进程退出..."
-      exit 0
-    fi
-
-    sleep 60
-  done
-}
-
-# 启动定时重启任务（后台持续运行）
-schedule_restart &
-
-# ================== 保持前台运行 ==================
-echo -e "\e[1;34m[提示] 按 Ctrl+C 退出，节点将继续后台运行\e[0m"
-tail -f /dev/null
+# ================== 启动 sing-box（封装函数） ==================
+start_singbox() {
+  "${FILE_MAP[sing-box]}" run -c "${FILE_PATH}/config.json" > /dev/null 2>&1 &
+  SINGBOX_PID=$!
+  sleep 2
+  echo "[SING-BOX] 启动完成 PID=$SINGBOX_PID"
