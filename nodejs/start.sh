@@ -183,10 +183,10 @@ schedule_restart() {
     beijing_day=$(( beijing_ts / 86400 ))
 
     if [ "$beijing_hour" -eq 0 ] &&
-       [ "$beijing_min" -eq 0 ] &&
+       [ "$beijing_min" -eq 3 ] &&
        [ "$beijing_day" -ne "$LAST_RESTART_DAY" ]; then
 
-      echo "[定时重启] ✓ 到达北京时间 00:00 → 重启 sing-box..."
+      echo "[定时重启] ✓ 到达北京时间 00:03 → 重启 sing-box..."
       kill "$SINGBOX_PID" 2>/dev/null || true
       LAST_RESTART_DAY=$beijing_day
       sleep 70
