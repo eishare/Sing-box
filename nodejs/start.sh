@@ -157,9 +157,9 @@ cat > "${FILE_PATH}/config.json" <<EOF
 EOF
 
 # ================== 启动 sing-box ==================
-nohup "${FILE_MAP[sing-box]}" run -c "${FILE_PATH}/config.json" > /dev/null 2>&1 &
-sleep 2
-echo -e "\e[1;32msing-box 已启动\e[0m"
+"${FILE_MAP[sing-box]}" run -c "${FILE_PATH}/config.json" &
+SINGBOX_PID=$!
+echo "[SING-BOX] 启动完成 PID=$SINGBOX_PID"
 
 # ================== 获取 IP & ISP ==================
 IP=$(curl -s --max-time 2 ipv4.ip.sb || curl -s --max-time 1 api.ipify.org || echo "IP_ERROR")
@@ -175,14 +175,10 @@ base64 "${FILE_PATH}/list.txt" | tr -d '\n' > "${FILE_PATH}/sub.txt"
 cat "${FILE_PATH}/list.txt"
 echo -e "\n\e[1;32m${FILE_PATH}/sub.txt 已保存\e[0m"
 
-# ================== 每日北京时间 00:03 重启Sing-box ==================
+# ================== 启动定时重启（前台阻塞） ==================
 schedule_restart() {
-  echo -e "\e[1;34m[定时重启Sing-box] 已启动（北京时间 00:03）\e[0m"
-
-  # 初始化为今天，防止启动时误触发
-  now_ts=$(date +%s)
-  beijing_ts=$((now_ts + 28800))
-  LAST_RESTART_DAY=$(( beijing_ts / 86400 ))
+  echo "[定时重启:Sing-box] 已启动（北京时间 00:03）"
+  LAST_RESTART_DAY=-1
 
   while true; do
     now_ts=$(date +%s)
@@ -191,27 +187,23 @@ schedule_restart() {
     M=$(( (beijing_ts / 60) % 60 ))
     D=$(( beijing_ts / 86400 ))
 
-    if [ "$H" -eq 0 ] && [ "$M" -eq 03 ] && [ "$D" -ne "$LAST_RESTART_DAY" ]; then
-      echo -e "\e[1;33m[定时重启Sing-box] 到达 00:03 → 重启 sing-box\e[0m"
+    # ---- 时间匹配 → 重启 sing-box ----
+    if [ "$H" -eq 00 ] && [ "$M" -eq 03 ] && [ "$D" -ne "$LAST_RESTART_DAY" ]; then
+      echo "[定时重启:Sing-box] 到达 00:03 → 重启 sing-box"
       LAST_RESTART_DAY=$D
-      
-      # 杀死旧进程
+
       kill "$SINGBOX_PID" 2>/dev/null || true
-      
-      # 等待优雅退出
-      sleep 70
-      
-      # 启动新进程
-      nohup "$SINGBOX_BIN" run -c "${FILE_PATH}/config.json" > "${DATA_PATH}/singbox.log" 2>&1 &
-      SINGBOX_PID=$!  # 关键：更新 PID！
-      
-      echo -e "\e[1;32m[重启完成] 新 sing-box 进程 PID: $SINGBOX_PID\e[0m"
+      sleep 3
+
+      "${FILE_MAP[sing-box]}" run -c "${FILE_PATH}/config.json" &
+      SINGBOX_PID=$!
+
+      echo "[Sing-box重启完成] 新 PID: $SINGBOX_PID"
     fi
-    sleep 20
+
+    sleep 1
   done
 }
-schedule_restart &
 
-# ================== 保持前台运行 ==================
-echo -e "\e[1;34m[提示] 按 Ctrl+C 退出，节点将继续后台运行\e[0m"
-tail -f /dev/null
+# ★★★ 关键：保持脚本前台运行，不能退出
+schedule_restart
