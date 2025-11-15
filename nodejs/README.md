@@ -12,6 +12,6 @@
 
 1：start.sh+index.js+package.json上传至服务器
 
-2：手动编辑uuid，输入tuic/hy2/vless端口，保存
+2：输入tuic/hy2/vless端口，保存
 
 3：开机
